@@ -1,0 +1,11 @@
+{
+  "base": "https://ZixianYang-089.github.io",
+  "site": "KingFlow",
+  "kf": "https://www.kingflow.ai",
+  "google_site_verification": "",
+  "pages": [
+    { "slug": "", "nav": "首页",
+      "title": "KingFlow｜国内 Claude / GPT API 加速中转平台",
+      "desc": "KingFlow 国内直连、低延迟的 AI API 中转，支持 Claude Code、OpenAI Codex 与 GPT/Claude/Gemini 多模型，一行配置即用。接入指南与配置教程合集。" }
+  ]
+}
