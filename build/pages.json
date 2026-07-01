@@ -21,6 +21,12 @@
       "nav": "Agent开发",
       "title": "用 Claude 中转做 Agent 开发：多模型编排与省钱经验 | KingFlow",
       "desc": "用 Claude 中转做 Agent 开发：多模型编排与省钱经验。KingFlow 国内直连、一个 Key 多模型、人民币充值、倍率透明，改一行 Base URL 即可接入。"
+    },
+    {
+      "slug": "gemini-claude-proxy",
+      "nav": "Gemini接入",
+      "title": "一站接入 Gemini 与 Claude：国内中转多模型经验 | KingFlow",
+      "desc": "一站接入 Gemini 与 Claude：国内中转多模型经验。KingFlow 国内直连、一个 Key 多模型、人民币充值、倍率透明，改一行 Base URL 即可接入。"
     }
   ]
 }

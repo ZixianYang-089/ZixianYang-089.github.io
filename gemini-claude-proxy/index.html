@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一站接入 Gemini 与 Claude：国内中转多模型经验 | KingFlow</title>
+<meta name="description" content="一站接入 Gemini 与 Claude：国内中转多模型经验。KingFlow 国内直连、一个 Key 多模型、人民币充值、倍率透明，改一行 Base URL 即可接入。">
+<link rel="canonical" href="https://ZixianYang-089.github.io/gemini-claude-proxy/">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="一站接入 Gemini 与 Claude：国内中转多模型经验 | KingFlow">
+<meta property="og:description" content="一站接入 Gemini 与 Claude：国内中转多模型经验。KingFlow 国内直连、一个 Key 多模型、人民币充值、倍率透明，改一行 Base URL 即可接入。">
+<meta property="og:url" content="https://ZixianYang-089.github.io/gemini-claude-proxy/">
+<meta property="og:site_name" content="KingFlow">
+<meta property="og:image" content="https://www.kingflow.ai/logo.png">
+<meta name="twitter:card" content="summary">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/">King<span>Flow</span></a>
+  <nav class="topnav"><a href="/">首页</a>
+<a href="/langchain-claude-proxy/">LangChain接入</a>
+<a href="/claude-agent-dev-proxy/">Agent开发</a>
+<a href="/gemini-claude-proxy/" class="active">Gemini接入</a></nav>
+  <a class="cta" href="https://www.kingflow.ai" rel="noopener">前往官网 →</a>
+</header>
+<main>
+<article class="post">
+<h1>一站接入 Gemini 与 Claude：国内中转多模型经验</h1>
+<div align="center">
+<h3>KingFlow · 国内直连 AI API 中转</h3>
+<a href="https://www.kingflow.ai"><img src="https://img.shields.io/badge/官网-www.kingflow.ai-FF6B35" alt="KingFlow"></a>
+</div>
+
+<p>写这篇的起因，是我这半年在一个项目里同时用到了 Gemini 和 Claude 两家模型。一开始我是老老实实分别去官方接的，折腾了大半个月，踩的坑比写的代码还多。后来切到中转站统一收口，才算把精力拿回来放在业务上。这里把过程和一些实测感受记一下，给同样想两家一起用的人省点时间。</p>
+<h2>一、单独接 Gemini 的门槛，比想象中高</h2>
+<p>很多人以为 Gemini 免费额度大、上手快，真到生产环境才发现不是那么回事。我列几个自己实际卡住的地方。</p>
+<p>第一是账号和计费体系。Gemini 走的是 GCP 那一套，你想用正式配额，基本躲不开开一个 Google Cloud 项目、绑信用卡、开通计费账户。国内的卡绑上去经常被拒，绑成功了额度和区域也未必如你所愿。光是把计费账户从 sandbox 状态转成正常状态，我就来回折腾了两天。</p>
+<p>第二是权限和项目结构。GCP 的 IAM、Service Account、API 启用开关是分开的，Vertex AI 那条线还要单独开服务、配区域、拿凭证 JSON。你得先搞懂 project / service account / API key 三者的关系，才知道 401 到底错在哪一环。对只想调个模型的人来说，这套企业级权限模型属实是杀鸡用牛刀。</p>
+<p>第三是国内网络不稳。就算前面都通了，从国内直连 Gemini 的端点，延迟和连通性都看运气。我用美国机场节点测的时候，首字延迟经常飙到四五十秒，高峰期直接超时；换日本节点好一点，也要十几二十秒，而且长连接跑几分钟就容易被掐。为了稳定，我一度还得自己维护代理，属于问题套问题。</p>
+<p>Claude 官方直连那边也没轻松到哪去：美区信用卡 BIN 被拒、账号风控动不动冻结、国内 IP 受限，这些和 Gemini 是同一类麻烦。两家都自己接，等于把这些坑各踩一遍。</p>
+<h2>二、中转站的价值：把 Gemini 和 Claude 统一成 OpenAI 兼容</h2>
+<p>我最后的解法是走中转站，用一个 OpenAI 兼容的端点，把两家模型都收到同一个接口后面。</p>
+<p>好处很直接。原本 Gemini 有 Gemini 的 SDK 和请求格式，Claude 有 Claude 的 messages 协议，两套鉴权、两套 SDK、两套错误码。收口之后，我的代码只认一个 <code>base_url</code> 和一个 API Key，切模型就是改一下 <code>model</code> 字段的事。GCP 那套项目、计费、IAM 全都不用我操心了，账号风控、区域限制这些也一并甩给中转层去扛。</p>
+<p>我现在用的是 KingFlow，端点是 <code>https://www.kingflow.ai/v1</code>。它把 Gemini、Claude 以及其他几家都挂在同一个 OpenAI 兼容接口后面，对我这种应用层开发者来说，认知负担一下就降下来了。</p>
+<h2>三、代码示例：改一行 base_url，切一个 model</h2>
+<p>用 OpenAI 官方的 Python SDK 就能直接打，不用装 Gemini 或 Anthropic 各自的库。</p>
+<pre><code class="language-python">from openai import OpenAI
+
+client = OpenAI(
+    api_key=&quot;你的 KingFlow Key&quot;,
+    base_url=&quot;https://www.kingflow.ai/v1&quot;,
+)
+
+# 调 Gemini，走多模态或长文场景
+resp = client.chat.completions.create(
+    model=&quot;gemini-3.1-flash&quot;,
+    messages=[
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;帮我总结这份长文档的三个要点&quot;},
+    ],
+)
+print(resp.choices[0].message.content)
+
+# 同一段代码，切到 Claude 跑推理/代码
+resp = client.chat.completions.create(
+    model=&quot;claude-opus-4-8&quot;,
+    messages=[
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;重构这段函数并说明思路&quot;},
+    ],
+)
+print(resp.choices[0].message.content)
+</code></pre>
+<p>可以看到，两家模型除了 <code>model</code> 这一个字段，其他代码完全不变。用 cURL 验证也是一样的路数：</p>
+<pre><code class="language-bash">curl https://www.kingflow.ai/v1/chat/completions \
+  -H &quot;Authorization: Bearer 你的 KingFlow Key&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;model&quot;: &quot;gemini-3.1-flash&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;你好&quot;}]
+  }'
+</code></pre>
+<p>想切 Claude 就把 <code>model</code> 换成 <code>claude-opus-4-8</code>，其余照旧。如果你用 Claude Code 这类原生走 Anthropic 协议的工具，则是配 <code>ANTHROPIC_BASE_URL</code> 指到官网、<code>ANTHROPIC_AUTH_TOKEN</code> 填 Key，同样是改配置不改逻辑。</p>
+<h2>四、Gemini 和 Claude 各自擅长什么，按需切</h2>
+<p>统一接口的好处，是让我可以根据任务在两家之间自由切，而不是被某一家绑死。用下来我的大致分工是这样的。</p>
+<p><strong>Gemini 我主要用在多模态和长文上。</strong> 图片、文档这类输入它处理得顺手，一次性喂进去很长的上下文做整体摘要、跨段落归纳，表现挺稳。<code>gemini-3.1-flash</code> 这档速度快、成本低，适合高频、量大的批处理场景，比如成批过文档、做初步分类。</p>
+<p><strong>Claude 我主要用在推理和代码上。</strong> 涉及多步逻辑推演、复杂重构、需要它讲清楚"为什么这么改"的活儿，<code>claude-opus-4-8</code> 给我的结果更靠谱，改大工程时尤其明显。如果只是日常问答、量比较大又想省钱，我会降到 <code>claude-sonnet-4-6</code> 做均衡，或者用 <code>claude-haiku-4-5</code> 扛高频低成本的调用。</p>
+<p>实际项目里我经常是混着用：先用 Gemini 把一大堆资料压成结构化摘要，再把摘要丢给 Claude 做推理和落地方案。因为在同一个接口后面，这种串联几乎零成本，改个 <code>model</code> 就切过去了，不用在两套 SDK 之间倒腾数据。</p>
+<h2>五、为什么我用 KingFlow</h2>
+<p>同类中转站不少，说说我留下来的几个实际理由，不吹别的。</p>
+<p>一是国内直连、延迟能接受。它用的是国内节点，我这边实测首字延迟一般在一到三秒，比之前挂美国节点动辄四五十秒的体验好太多，也省掉了自己维护代理这摊事。</p>
+<p>二是一个 Key 管多模型。Gemini、Claude 以及其他几家共用一把 Key，切模型只改 <code>model</code> 参数，我不用再维护好几套凭证，配置文件干净了不少。</p>
+<p>三是后台能对账。日志、余额、token 用量、调用明细都能在后台查到，倍率也是透明的，月底核对花销心里有数，不会出现扣费和预期对不上的情况。另外它走的是官方协议而不是逆向反代，上游更新的时候不容易突然挂，这点对生产环境比较重要。</p>
+<p>充值是人民币小额，新人注册一般会送点额度，可以先测后充，不用一上来就大额投入。具体额度和倍率以后台为准。</p>
+<h2>六、FAQ</h2>
+<p><strong>问：Gemini 和 Claude 真的能共用一个 API Key 吗？</strong>
+答：在 KingFlow 这类中转下是可以的。端点统一成 OpenAI 兼容之后，一把 Key 就能同时调 Gemini 和 Claude，切换只靠 <code>model</code> 字段，不用为每家单独申请和维护凭证。</p>
+<p><strong>问：不接 GCP，直接调 Gemini 会不会缺功能？</strong>
+答：应用层常用的对话、多模态、长上下文都能覆盖。中转层把 Gemini 包成 OpenAI 兼容格式，你按标准 <code>chat/completions</code> 调用即可，省掉了 GCP 项目、计费和 IAM 那一整套前置工作。</p>
+<p><strong>问：什么时候该用 Gemini，什么时候用 Claude？</strong>
+答：我的经验是多模态、超长文、高频批处理偏向 Gemini（比如 <code>gemini-3.1-flash</code>）；复杂推理、代码重构、要讲清楚思路的活儿偏向 Claude（<code>claude-opus-4-8</code>）。因为同一接口切换零成本，完全可以按单个任务来挑，甚至串联着用。</p>
+<p><strong>问：从官方直连迁到中转，代码改动大吗？</strong>
+答：很小。用 OpenAI SDK 的话，基本就是把 <code>base_url</code> 指到 <code>https://www.kingflow.ai/v1</code>、换上新 Key，业务逻辑不动。Claude Code 这类原生工具则改 <code>ANTHROPIC_BASE_URL</code> 和 <code>ANTHROPIC_AUTH_TOKEN</code>，同样属于改配置不改代码。</p>
+</article>
+</main>
+<footer class="site-footer">
+  <p><strong>KingFlow</strong> · 国内直连、稳定低延迟的 Claude / GPT API 中转平台</p>
+  <p>官网：<a href="https://www.kingflow.ai" rel="noopener">www.kingflow.ai</a> ｜ 支持 Claude Code · OpenAI Codex · 全系 Claude / GPT 模型</p>
+  <p class="muted">© 2026 KingFlow. 本站为 KingFlow 中转方案与配置教程合集。</p>
+</footer>
+</body>
+</html>
