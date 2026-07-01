@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LangChain 接入 Claude 中转 API：开发实战 | KingFlow</title>
+<meta name="description" content="LangChain 接入 Claude 中转 API：开发实战。KingFlow 国内直连、一个 Key 多模型、人民币充值、倍率透明，改一行 Base URL 即可接入。">
+<link rel="canonical" href="https://ZixianYang-089.github.io/langchain-claude-proxy/">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="LangChain 接入 Claude 中转 API：开发实战 | KingFlow">
+<meta property="og:description" content="LangChain 接入 Claude 中转 API：开发实战。KingFlow 国内直连、一个 Key 多模型、人民币充值、倍率透明，改一行 Base URL 即可接入。">
+<meta property="og:url" content="https://ZixianYang-089.github.io/langchain-claude-proxy/">
+<meta property="og:site_name" content="KingFlow">
+<meta property="og:image" content="https://www.kingflow.ai/logo.png">
+<meta name="twitter:card" content="summary">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/">King<span>Flow</span></a>
+  <nav class="topnav"><a href="/">首页</a>
+<a href="/langchain-claude-proxy/" class="active">LangChain接入</a></nav>
+  <a class="cta" href="https://www.kingflow.ai" rel="noopener">前往官网 →</a>
+</header>
+<main>
+<article class="post">
+<h1>LangChain 接入 Claude 中转 API：开发实战</h1>
+<div align="center">
+<h3>KingFlow · 国内直连 AI API 中转</h3>
+<a href="https://www.kingflow.ai"><img src="https://img.shields.io/badge/官网-www.kingflow.ai-FF6B35" alt="KingFlow"></a>
+</div>
+
+<p>写这篇是因为我自己在 LangChain 项目里折腾中转接 Claude 踩了不少坑。网上多数教程还停留在直连官方，或者用早就下线的模型名跑示例，照抄根本跑不起来。这篇按我实际项目里能跑通的写法整理，从两种接入方式讲到链/Agent 里的多模型混用，再到流式和工具调用的细节，最后回答几个常被问到的问题。</p>
+<h2>一、LangChain 里接中转的两种方式</h2>
+<p>LangChain 生态里接 Claude 中转，本质上就是把请求指向一个自己可控的 <code>base_url</code>。有两条路，选哪条取决于你想走哪套协议。</p>
+<p><strong>方式一：走 OpenAI 兼容协议，用 <code>ChatOpenAI</code>。</strong></p>
+<p>这是我更推荐的默认做法。KingFlow 提供 OpenAI 兼容端点 <code>https://www.kingflow.ai/v1</code>，你用 <code>langchain-openai</code> 里的 <code>ChatOpenAI</code>，把 <code>base_url</code> 指过去，<code>model</code> 填 Claude 的在售名（比如 <code>claude-opus-4-8</code>），一个客户端就能同时调 Claude 和 GPT 系模型，切换只改 <code>model</code> 参数。团队里如果本来就用 <code>ChatOpenAI</code> 封装了一堆链，这条路几乎零改动。</p>
+<p><strong>方式二：走 Anthropic 原生协议，用 <code>ChatAnthropic</code>。</strong></p>
+<p>如果你的代码依赖 Anthropic 特有的字段（比如某些细粒度的 <code>system</code> 结构、<code>cache_control</code> prompt 缓存标记），那就用 <code>langchain-anthropic</code> 的 <code>ChatAnthropic</code>，把 <code>base_url</code> 指向中转的 Anthropic 端点，同时提供 <code>ANTHROPIC_AUTH_TOKEN</code> 作为鉴权。这条路能拿到官方 <code>/v1/messages</code> 协议的完整能力，KingFlow 这边是完整透传官方协议的，不是逆向反代，所以 prompt cache 这类特性能原样用上。</p>
+<p>我的经验：混合调度多家模型、想用一个 Key 管全部，用方式一；纯 Claude、且要压榨缓存和原生字段，用方式二。两者可以在同一个项目里并存，互不冲突。</p>
+<h2>二、代码示例：改一行 Base URL 接进来</h2>
+<p>先看方式一，最常用。安装 <code>langchain-openai</code> 后：</p>
+<pre><code class="language-python">from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    base_url=&quot;https://www.kingflow.ai/v1&quot;,
+    api_key=&quot;你的-KingFlow-Key&quot;,
+    model=&quot;claude-opus-4-8&quot;,
+    temperature=0.3,
+)
+
+resp = llm.invoke(&quot;用三句话解释向量数据库的作用&quot;)
+print(resp.content)
+</code></pre>
+<p>关键就是 <code>base_url</code> 和 <code>api_key</code> 两行，其余用法跟你平时写 <code>ChatOpenAI</code> 一模一样。想换成便宜些的高频模型，把 <code>model</code> 改成 <code>claude-haiku-4-5</code> 即可，Key 不用动。</p>
+<p>如果偏好用环境变量（生产里建议这样，别把 Key 写进代码）：</p>
+<pre><code class="language-python">import os
+from langchain_openai import ChatOpenAI
+
+os.environ[&quot;OPENAI_API_KEY&quot;] = &quot;你的-KingFlow-Key&quot;
+os.environ[&quot;OPENAI_BASE_URL&quot;] = &quot;https://www.kingflow.ai/v1&quot;
+
+llm = ChatOpenAI(model=&quot;claude-sonnet-4-6&quot;)
+</code></pre>
+<p>方式二，走 <code>ChatAnthropic</code> 原生协议：</p>
+<pre><code class="language-python">from langchain_anthropic import ChatAnthropic
+
+llm = ChatAnthropic(
+    base_url=&quot;https://www.kingflow.ai&quot;,
+    api_key=&quot;你的-KingFlow-Key&quot;,   # 对应 ANTHROPIC_AUTH_TOKEN
+    model=&quot;claude-opus-4-8&quot;,
+    max_tokens=2048,
+)
+
+print(llm.invoke(&quot;写一个快速排序的 Python 实现&quot;).content)
+</code></pre>
+<p>注意 <code>ChatAnthropic</code> 的 <code>base_url</code> 指向的是根地址（不带 <code>/v1</code>），而 <code>ChatOpenAI</code> 那条要带 <code>/v1</code>。这个差别踩过一次坑，两边协议的路径约定不一样，别搞混。</p>
+<h2>三、链/Agent 里的多模型混用</h2>
+<p>这是中转最香的地方：一个 Key 背后挂着多款模型，你可以在一条链里按环节分配不同模型，让强模型干重活、便宜模型干杂活，成本能压下来一大截。</p>
+<p>我常用的模式是——<strong>推理规划用旗舰，工具调用/格式整理用低成本模型</strong>。比如一个 Agent，用 <code>claude-opus-4-8</code> 做任务拆解和最终推理，用 <code>claude-haiku-4-5</code> 去跑那些只是"填个模板、抽个字段、判断个是否"的高频小步骤：</p>
+<pre><code class="language-python">from langchain_openai import ChatOpenAI
+
+BASE = &quot;https://www.kingflow.ai/v1&quot;
+KEY = &quot;你的-KingFlow-Key&quot;
+
+# 强模型：负责推理、规划、最终输出
+brain = ChatOpenAI(base_url=BASE, api_key=KEY, model=&quot;claude-opus-4-8&quot;)
+
+# 便宜模型：负责工具调用、字段抽取、格式整理等高频轻活
+worker = ChatOpenAI(base_url=BASE, api_key=KEY, model=&quot;claude-haiku-4-5&quot;)
+
+def pipeline(question: str):
+    plan = brain.invoke(f&quot;把这个任务拆成可执行步骤：{question}&quot;)
+    draft = worker.invoke(f&quot;按下面步骤整理成结构化清单：\n{plan.content}&quot;)
+    return brain.invoke(f&quot;基于清单给出最终答复：\n{draft.content}&quot;).content
+</code></pre>
+<p>因为两个客户端指的是同一个 <code>base_url</code>、同一个 Key，后台能把这些调用汇总在一起，日志、token 用量、余额都在一个面板看，对账不用在多家平台之间来回切。真正做量之后，这种"分模型对账"能力比省那点接入代码值钱得多。</p>
+<p>在 LangGraph 里也是一样的思路：不同节点绑不同 <code>ChatOpenAI</code> 实例，路由节点决定走强还是走弱。甚至可以在同一套代码里混进 GPT 系模型做交叉验证，只要改 <code>model</code> 就行，不必再维护第二套 Key 和第二个 SDK。</p>
+<h2>四、流式与工具调用注意点</h2>
+<p><strong>流式输出。</strong> LangChain 里用 <code>.stream()</code> 或异步 <code>.astream()</code> 拿增量。KingFlow 这边流式是支持的，用法跟直连官方没区别：</p>
+<pre><code class="language-python">for chunk in llm.stream(&quot;讲讲 RAG 的检索召回优化&quot;):
+    print(chunk.content, end=&quot;&quot;, flush=True)
+</code></pre>
+<p>有两个点提一下：一是首字延迟（TTFT），走国内直连节点通常一两秒就出字，比自己挂代理连美国节点动辄几十秒稳定得多，交互式场景体感差别很大；二是流式下别忘了处理空 chunk，某些模型在开头会先吐一个不带内容的分片，<code>chunk.content</code> 可能是空串，做前端拼接时判一下。</p>
+<p><strong>工具调用（Function Calling）。</strong> 用 <code>bind_tools</code> 绑定工具，两种方式都支持：</p>
+<pre><code class="language-python">from langchain_core.tools import tool
+
+@tool
+def get_weather(city: str) -&gt; str:
+    &quot;&quot;&quot;查询指定城市的天气&quot;&quot;&quot;
+    return f&quot;{city}：晴，26 度&quot;
+
+llm_with_tools = llm.bind_tools([get_weather])
+ai_msg = llm_with_tools.invoke(&quot;北京今天天气怎么样&quot;)
+print(ai_msg.tool_calls)
+</code></pre>
+<p>实践中要注意：走 <code>ChatOpenAI</code> 兼容协议时，工具调用被转成 OpenAI 的 <code>tool_calls</code> 格式，绝大多数场景没问题；但如果你的工具 schema 特别复杂、或用到 Anthropic 独有的工具行为，建议直接用 <code>ChatAnthropic</code> 走原生协议，保真度更高。另外流式 + 工具调用同时开时，<code>tool_calls</code> 是分片累积出来的，要等流结束再解析，别在中途读。</p>
+<h2>五、为什么用 KingFlow</h2>
+<p>抛开接入方便不谈，我最后固定用它，是几个实在的理由：</p>
+<ul>
+<li><strong>国内直连</strong>：国内节点，TTFT 一般一到三秒，不用自己再挂代理。之前用机场代理连官方，高频长连接三五分钟就被识别，403/429 连着来，Agent 跑一半断掉的事没少遇到，换成直连之后这类问题基本消失。</li>
+<li><strong>一个 Key 多模型</strong>：Claude 全系加 GPT 系等都在一个 Key 后面，链里换模型只改 <code>model</code> 参数，不用维护多套凭证和多个 SDK。</li>
+<li><strong>走官方协议、不掉包</strong>：是官方 <code>/v1/messages</code> 协议透传，不是逆向反代，官方更新时不容易突然挂；也不会拿小模型冒充旗舰，你填 <code>claude-opus-4-8</code> 拿到的就是它。</li>
+<li><strong>后台对账透明</strong>：日志、余额、token 用量、调用明细都能查，做多模型混用时按 Key 拆成本很方便。人民币小额充值、新人有额度，可以先测通再决定要不要上量。</li>
+</ul>
+<p>对做 LangChain 项目的人来说，"改一行 base_url 就能接、一个 Key 调全部、用量能对上账"这三点，基本覆盖了日常开发的核心诉求。</p>
+<h2>六、FAQ</h2>
+<p><strong>Q1：<code>ChatOpenAI</code> 和 <code>ChatAnthropic</code> 到底选哪个？</strong>
+默认用 <code>ChatOpenAI</code> 指 <code>https://www.kingflow.ai/v1</code>，因为它天然支持多家模型混调、一个 Key 走天下。只有当你要用 Anthropic 原生字段或 prompt 缓存特性时，才用 <code>ChatAnthropic</code> 走根地址端点。同一项目两者可以并存。</p>
+<p><strong>Q2：<code>base_url</code> 要不要带 <code>/v1</code>？</strong>
+走 <code>ChatOpenAI</code>（OpenAI 兼容）要带，<code>https://www.kingflow.ai/v1</code>；走 <code>ChatAnthropic</code>（Anthropic 原生）填根地址 <code>https://www.kingflow.ai</code>，不带 <code>/v1</code>。这个最容易搞混，接不通先检查这里。</p>
+<p><strong>Q3：模型名填什么？</strong>
+用当前在售的名字：<code>claude-opus-4-8</code>（旗舰、重活）、<code>claude-sonnet-4-6</code>（均衡）、<code>claude-haiku-4-5</code>（高频低成本）。别再抄老教程里那种带长日期后缀的旧模型名，那些已经调不通了。</p>
+<p><strong>Q4：多模型混用会不会难对账？</strong>
+不会，反而更好对。因为所有调用都走同一个 <code>base_url</code> 和同一个 Key，后台把 token 用量、调用明细汇总在一处，按模型看消耗一目了然。要给团队分账，就给不同成员发不同 Key，后台按 Key 分别统计即可。</p>
+</article>
+</main>
+<footer class="site-footer">
+  <p><strong>KingFlow</strong> · 国内直连、稳定低延迟的 Claude / GPT API 中转平台</p>
+  <p>官网：<a href="https://www.kingflow.ai" rel="noopener">www.kingflow.ai</a> ｜ 支持 Claude Code · OpenAI Codex · 全系 Claude / GPT 模型</p>
+  <p class="muted">© 2026 KingFlow. 本站为 KingFlow 中转方案与配置教程合集。</p>
+</footer>
+</body>
+</html>
